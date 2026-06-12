@@ -6,10 +6,12 @@ export async function POST(
 ) {
   const { id: conversationId } = await params;
   const body = await req.json();
-  const { id, role, content } = body as {
+  const { id, role, content, toolName, toolCallId } = body as {
     id: string;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
   };
 
   if (!id || !role || !content) {
@@ -19,6 +21,6 @@ export async function POST(
     );
   }
 
-  const message = addMessage(id, conversationId, role, content);
+  const message = addMessage(id, conversationId, role, content, toolName, toolCallId);
   return Response.json(message, { status: 201 });
 }
