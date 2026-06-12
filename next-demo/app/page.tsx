@@ -1,223 +1,406 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  timestamp: Date;
+  created_at: string;
 }
 
 interface Conversation {
   id: string;
   title: string;
-  messages: Message[];
-  createdAt: Date;
-  updatedAt: Date;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  messages?: Message[];
 }
 
 function createId() {
   return Math.random().toString(36).substring(2, 10);
 }
 
-function formatTime(date: Date) {
-  return date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTime(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDate(date: Date) {
+function formatDate(dateStr: string) {
+  const d = new Date(dateStr);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  if (date.toDateString() === today.toDateString()) return "今天";
-  if (date.toDateString() === yesterday.toDateString()) return "昨天";
-  return date.toLocaleDateString("zh-CN", {
-    month: "short",
-    day: "numeric",
-  });
+  if (d.toDateString() === today.toDateString()) return "今天";
+  if (d.toDateString() === yesterday.toDateString()) return "昨天";
+  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
-const INITIAL_CONVERSATIONS: Conversation[] = [
-  {
-    id: "1",
-    title: "React 性能优化建议",
-    messages: [
-      {
-        id: "m1",
-        role: "user",
-        content: "我的 React 应用在列表渲染时很卡，有什么优化建议吗？",
-        timestamp: new Date(Date.now() - 3600000),
-      },
-      {
-        id: "m2",
-        role: "assistant",
-        content:
-          "针对 React 列表渲染性能问题，以下是一些常见的优化策略：\n\n1. **使用 React.memo**：对列表项组件进行记忆化，避免不必要的重新渲染\n2. **虚拟列表**：使用 react-window 或 react-virtuoso，只渲染可视区域内的元素\n3. **key 属性**：确保使用稳定且唯一的 key，避免使用数组索引\n4. **useMemo / useCallback**：对传递给子组件的 props 进行记忆化\n5. **减少状态层级**：将状态尽量下移到需要的组件中\n\n你可以根据具体场景选择合适的方案，虚拟列表通常是最有效的。",
-        timestamp: new Date(Date.now() - 3500000),
-      },
-    ],
-    createdAt: new Date(Date.now() - 3600000),
-    updatedAt: new Date(Date.now() - 3500000),
-  },
-  {
-    id: "2",
-    title: "Next.js 路由配置",
-    messages: [
-      {
-        id: "m3",
-        role: "user",
-        content: "Next.js App Router 中如何配置动态路由？",
-        timestamp: new Date(Date.now() - 86400000),
-      },
-      {
-        id: "m4",
-        role: "assistant",
-        content:
-          "在 Next.js App Router 中，动态路由通过文件夹命名来配置：\n\n```tsx\napp/blog/[slug]/page.tsx\n```\n\n页面组件接收 `params` 参数：\n\n```tsx\nexport default function BlogPost({ params }: { params: { slug: string } }) {\n  return <h1>文章: {params.slug}</h1>;\n}\n```\n\n还支持捕获所有路由 `[...slug]` 和可选捕获所有路由 `[[...slug]]`。",
-        timestamp: new Date(Date.now() - 86000000),
-      },
-    ],
-    createdAt: new Date(Date.now() - 86400000),
-    updatedAt: new Date(Date.now() - 86000000),
-  },
-  {
-    id: "3",
-    title: "TypeScript 泛型问题",
-    messages: [
-      {
-        id: "m5",
-        role: "user",
-        content: "如何在 TypeScript 中正确定义一个泛型工具类型？",
-        timestamp: new Date(Date.now() - 172800000),
-      },
-      {
-        id: "m6",
-        role: "assistant",
-        content:
-          "TypeScript 泛型工具类型非常强大，以下是一些常用的内置工具类型：\n\n- `Partial<T>` — 将所有属性变为可选\n- `Required<T>` — 将所有属性变为必填\n- `Pick<T, K>` — 从 T 中选取部分属性\n- `Omit<T, K>` — 从 T 中排除部分属性\n- `Record<K, V>` — 构造键值对类型\n\n你也可以自定义泛型工具类型来满足特定需求。",
-        timestamp: new Date(Date.now() - 172000000),
-      },
-    ],
-    createdAt: new Date(Date.now() - 172800000),
-    updatedAt: new Date(Date.now() - 172000000),
-  },
-];
-
 export default function Home() {
-  const [conversations, setConversations] =
-    useState<Conversation[]>(INITIAL_CONVERSATIONS);
-  const [activeId, setActiveId] = useState<string>("1");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("gpt-4o-mini");
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
-  const activeConversation = conversations.find((c) => c.id === activeId);
+  // Close model dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (
+        modelDropdownRef.current &&
+        !modelDropdownRef.current.contains(e.target as Node)
+      ) {
+        setModelDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeConversation?.messages.length, isTyping]);
+  }, [messages.length, isTyping, streamingContent]);
 
-  function createNewConversation() {
-    const newConv: Conversation = {
-      id: createId(),
-      title: "新的对话",
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    setConversations((prev) => [newConv, ...prev]);
-    setActiveId(newConv.id);
-    setInputValue("");
-    inputRef.current?.focus();
+  // Load conversations and models on mount
+  useEffect(() => {
+    async function init() {
+      try {
+        const [convRes, modelRes] = await Promise.all([
+          fetch("/api/conversations"),
+          fetch("/api/models"),
+        ]);
+        const convData: Conversation[] = await convRes.json();
+        const modelData: { models: string[]; default: string } =
+          await modelRes.json();
+
+        setConversations(convData);
+        setModels(modelData.models);
+        setSelectedModel(modelData.default);
+
+        // Auto-select the first conversation if exists
+        if (convData.length > 0) {
+          setActiveId(convData[0].id);
+          loadMessages(convData[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  async function loadMessages(convId: string) {
+    try {
+      const res = await fetch(`/api/conversations/${convId}`);
+      const data: Conversation = await res.json();
+      setMessages(data.messages || []);
+    } catch {
+      setMessages([]);
+    }
   }
 
-  function deleteConversation(id: string) {
-    setConversations((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (id === activeId && next.length > 0) {
-        setActiveId(next[0].id);
-      } else if (next.length === 0) {
-        createNewConversation();
+  function switchConversation(id: string) {
+    if (id === activeId) return;
+    setActiveId(id);
+    loadMessages(id);
+  }
+
+  async function createNewConversation() {
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
+      });
+      const conv: Conversation = await res.json();
+      setConversations((prev) => [conv, ...prev]);
+      setActiveId(conv.id);
+      setMessages([]);
+      setInputValue("");
+      inputRef.current?.focus();
+    } catch (err) {
+      console.error("Failed to create conversation:", err);
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    try {
+      await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      setConversations((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        if (id === activeId) {
+          if (next.length > 0) {
+            setActiveId(next[0].id);
+            loadMessages(next[0].id);
+          } else {
+            setActiveId(null);
+            setMessages([]);
+          }
+        }
         return next;
+      });
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+    }
+  }
+
+  async function changeModel(model: string) {
+    setSelectedModel(model);
+    setModelDropdownOpen(false);
+    // Update current conversation's model if one is active
+    if (activeId) {
+      try {
+        await fetch(`/api/conversations/${activeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model }),
+        });
+      } catch {
+        // Non-critical, ignore
       }
-      return next;
+    }
+  }
+
+  function handleStopStreaming() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }
+
+  const sendToAI = useCallback(
+    async (convId: string, userMessage: string) => {
+      setIsTyping(true);
+      setStreamingContent("");
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      // Determine model from the current conversation
+      const currentConv = conversations.find((c) => c.id === convId);
+      const model = currentConv?.model || selectedModel;
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: convId,
+            userMessage,
+            model,
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          const errorMsg =
+            errorData?.error || `请求失败 (${response.status})`;
+          throw new Error(errorMsg);
+        }
+
+        if (!response.body) {
+          throw new Error("响应流不可用");
+        }
+
+        // Read plain text stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          accumulated += chunk;
+          setStreamingContent(accumulated);
+        }
+
+        // Save assistant message to DB
+        const assistantMsgId = createId();
+        try {
+          await fetch(`/api/conversations/${convId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: assistantMsgId,
+              role: "assistant",
+              content: accumulated,
+            }),
+          });
+        } catch {
+          // Non-critical
+        }
+
+        // Update local state
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantMsgId,
+            role: "assistant",
+            content: accumulated,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        touchConversationInList(convId);
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          // Save partial content
+          const partialContent = streamingContent;
+          if (partialContent) {
+            const msgId = createId();
+            try {
+              await fetch(`/api/conversations/${convId}/messages`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: msgId,
+                  role: "assistant",
+                  content: partialContent,
+                }),
+              });
+            } catch {
+              // Non-critical
+            }
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: msgId,
+                role: "assistant",
+                content: partialContent,
+                created_at: new Date().toISOString(),
+              },
+            ]);
+          }
+        } else {
+          const errorMessage =
+            err instanceof Error ? err.message : "发生未知错误";
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: createId(),
+              role: "assistant",
+              content: `[错误] ${errorMessage}`,
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        }
+      } finally {
+        setIsTyping(false);
+        setStreamingContent("");
+        abortControllerRef.current = null;
+      }
+    },
+    [conversations, selectedModel, streamingContent]
+  );
+
+  function touchConversationInList(convId: string) {
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.id === convId);
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      updated[idx] = {
+        ...updated[idx],
+        updated_at: new Date().toISOString(),
+      };
+      // Re-sort by updated_at DESC
+      updated.sort(
+        (a, b) =>
+          new Date(b.updated_at).getTime() -
+          new Date(a.updated_at).getTime()
+      );
+      return updated;
     });
   }
 
-  function simulateAIReply(convId: string, userMessage: string) {
-    setIsTyping(true);
-    const delay = 800 + Math.random() * 1200;
-
-    setTimeout(() => {
-      const replies: Record<string, string> = {
-        default:
-          "感谢你的提问！这是一个很好的问题。\n\n让我为你分析一下：\n\n1. 首先，理解问题的核心是关键\n2. 其次，需要考虑不同的解决方案\n3. 最后，选择最适合你场景的方案\n\n如果你需要更详细的解释，请随时告诉我。",
-      };
-
-      const reply = replies.default;
-      const assistantMsg: Message = {
-        id: createId(),
-        role: "assistant",
-        content: reply,
-        timestamp: new Date(),
-      };
-
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id !== convId) return c;
-          const updatedMessages = [...c.messages, assistantMsg];
-          return {
-            ...c,
-            messages: updatedMessages,
-            updatedAt: new Date(),
-            title:
-              c.messages.length === 0
-                ? userMessage.slice(0, 20) + (userMessage.length > 20 ? "..." : "")
-                : c.title,
-          };
-        })
-      );
-      setIsTyping(false);
-    }, delay);
-  }
-
-  function handleSend() {
+  async function handleSend() {
     const text = inputValue.trim();
     if (!text || isTyping) return;
 
+    let targetId = activeId;
+
+    // Create a new conversation if none is active
+    if (!targetId) {
+      try {
+        const res = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: selectedModel }),
+        });
+        const conv: Conversation = await res.json();
+        setConversations((prev) => [conv, ...prev]);
+        setActiveId(conv.id);
+        targetId = conv.id;
+      } catch {
+        return;
+      }
+    }
+
+    // Optimistically add user message to local state
+    const userMsgId = createId();
     const userMsg: Message = {
-      id: createId(),
+      id: userMsgId,
       role: "user",
       content: text,
-      timestamp: new Date(),
+      created_at: new Date().toISOString(),
     };
+    setMessages((prev) => [...prev, userMsg]);
 
-    const targetId = activeId;
+    // Save user message to DB
+    try {
+      await fetch(`/api/conversations/${targetId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: userMsgId,
+          role: "user",
+          content: text,
+        }),
+      });
+    } catch {
+      // Non-critical
+    }
 
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== targetId) return c;
-        const updatedMessages = [...c.messages, userMsg];
-        return {
-          ...c,
-          messages: updatedMessages,
-          updatedAt: new Date(),
-          title:
-            c.messages.length === 0
-              ? text.slice(0, 20) + (text.length > 20 ? "..." : "")
-              : c.title,
-        };
-      })
-    );
+    // Update title if it's the first message
+    const currentConv = conversations.find((c) => c.id === targetId);
+    if (!currentConv || currentConv.title === "新的对话") {
+      const newTitle =
+        text.slice(0, 20) + (text.length > 20 ? "..." : "");
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === targetId ? { ...c, title: newTitle } : c
+        )
+      );
+      try {
+        await fetch(`/api/conversations/${targetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: newTitle }),
+        });
+      } catch {
+        // Non-critical
+      }
+    }
 
     setInputValue("");
-    simulateAIReply(targetId, text);
+    sendToAI(targetId, text);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -230,11 +413,42 @@ export default function Home() {
   const groupedConversations = conversations.reduce<
     Record<string, Conversation[]>
   >((groups, conv) => {
-    const label = formatDate(conv.updatedAt);
+    const label = formatDate(conv.updated_at);
     if (!groups[label]) groups[label] = [];
     groups[label].push(conv);
     return groups;
   }, {});
+
+  const displayContent = isTyping ? streamingContent : null;
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-zinc-950">
+        <div className="flex items-center gap-3 text-zinc-400">
+          <svg
+            className="h-5 w-5 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          <span className="text-sm">加载中...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-white dark:bg-zinc-950">
@@ -288,7 +502,7 @@ export default function Home() {
                           ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100"
                           : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800/60"
                       }`}
-                      onClick={() => setActiveId(conv.id)}
+                      onClick={() => switchConversation(conv.id)}
                     >
                       <svg
                         width="16"
@@ -328,6 +542,11 @@ export default function Home() {
                   ))}
                 </div>
               )
+            )}
+            {conversations.length === 0 && (
+              <div className="px-3 py-8 text-center text-xs text-zinc-400">
+                暂无对话，点击上方按钮新建
+              </div>
             )}
           </div>
         )}
@@ -381,18 +600,102 @@ export default function Home() {
                 AI 助手
               </h1>
               <p className="text-xs text-zinc-400">
-                {activeConversation
-                  ? `${activeConversation.messages.length} 条消息`
-                  : "新对话"}
+                {isTyping
+                  ? "正在输入..."
+                  : activeId
+                    ? `${messages.length} 条消息`
+                    : "新对话"}
               </p>
             </div>
+          </div>
+
+          {/* Model Selector */}
+          <div ref={modelDropdownRef} className="relative">
+            <button
+              onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+              className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 6V2m0 0L8 6m4-4l4 4" />
+                <path d="M12 18v4m0 0l4-4m-4 4l-4-4" />
+                <rect x="4" y="8" width="16" height="8" rx="2" />
+                <text
+                  x="12"
+                  y="14"
+                  textAnchor="middle"
+                  fontSize="7"
+                  fill="currentColor"
+                  stroke="none"
+                >
+                  AI
+                </text>
+              </svg>
+              <span>{selectedModel}</span>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {modelDropdownOpen && models.length > 0 && (
+              <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+                <div className="px-3 py-1.5 text-xs font-medium text-zinc-400">
+                  选择模型
+                </div>
+                {models.map((model) => (
+                  <button
+                    key={model}
+                    onClick={() => changeModel(model)}
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                      model === selectedModel
+                        ? "bg-blue-50 font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                        : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {model === selectedModel && (
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    )}
+                    <span className={model !== selectedModel ? "ml-[14px]" : ""}>
+                      {model}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </header>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-6">
-          {!activeConversation ||
-          activeConversation.messages.length === 0 ? (
+          {!activeId || messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
                 <svg
@@ -438,7 +741,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="mx-auto max-w-3xl space-y-6">
-              {activeConversation.messages.map((msg) => (
+              {messages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex gap-3 ${
@@ -477,7 +780,7 @@ export default function Home() {
                           : "text-zinc-400 dark:text-zinc-500"
                       }`}
                     >
-                      {formatTime(msg.timestamp)}
+                      {formatTime(msg.created_at)}
                     </div>
                   </div>
                   {msg.role === "user" && (
@@ -501,7 +804,35 @@ export default function Home() {
                 </div>
               ))}
 
-              {isTyping && (
+              {/* Streaming message */}
+              {isTyping && displayContent && (
+                <div className="flex gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z" />
+                      <path d="M9 21h6M10 17v4M14 17v4" />
+                    </svg>
+                  </div>
+                  <div className="max-w-[75%] rounded-2xl bg-zinc-100 px-4 py-3 text-sm leading-relaxed text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+                    <div className="whitespace-pre-wrap">
+                      {displayContent}
+                      <span className="inline-block h-4 w-0.5 animate-pulse bg-zinc-400 dark:bg-zinc-300" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Typing indicator (before content arrives) */}
+              {isTyping && !displayContent && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600">
                     <svg
@@ -551,28 +882,44 @@ export default function Home() {
                 }}
               />
             </div>
-            <button
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isTyping}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {isTyping ? (
+              <button
+                onClick={handleStopStreaming}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white transition-colors hover:bg-red-600"
               >
-                <path d="M22 2L11 13" />
-                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-            </button>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!inputValue.trim()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M22 2L11 13" />
+                  <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
+            )}
           </div>
           <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-zinc-400">
-            AI 助手可能会出错，请核实重要信息
+            当前模型: {selectedModel} | AI 助手可能会出错，请核实重要信息
           </p>
         </div>
       </main>
