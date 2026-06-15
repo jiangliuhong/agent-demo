@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数据库表结构</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --fg: #1a1a2e;
+      --muted: #6b7280;
+      --accent: #7c3aed;
+      --accent-light: #ede9fe;
+      --card: #ffffff;
+      --border: #e5e7eb;
+      --code-bg: #f3f4f6;
+      --success: #10b981;
+      --warn: #f59e0b;
+      --error: #ef4444;
+      --blue: #3b82f6;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.75;
+      font-size: 15px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--accent);
+    }
+    h1 .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      background: var(--accent-light);
+      color: var(--accent);
+      padding: 2px 10px;
+      border-radius: 999px;
+      vertical-align: middle;
+      margin-left: 8px;
+      font-weight: 500;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-top: 48px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--accent-light);
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 28px;
+      margin-bottom: 10px;
+    }
+
+    p { margin-bottom: 12px; }
+
+    code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.88em;
+      font-family: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin: 12px 0 16px;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--accent-light);
+      font-weight: 600;
+    }
+    /* 表格列：主键/可空高亮 */
+    td .pk { color: var(--accent); font-weight: 600; }
+    td .fk { color: var(--blue); font-weight: 600; }
+    td .nullable { color: var(--muted); }
+    tr.highlight-row td { background: #faf5ff; }
+
+    /* 概览卡片 */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin: 20px 0 8px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .stat-card .label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .stat-card .value {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    /* ER 关系图 */
+    .er-diagram {
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      gap: 32px;
+      margin: 24px 0;
+      flex-wrap: wrap;
+    }
+    .er-table {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      min-width: 240px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .er-table .er-title {
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+    .er-table .er-row {
+      padding: 6px 16px;
+      font-size: 0.82rem;
+      font-family: "SF Mono", "Fira Code", Menlo, monospace;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .er-table .er-row.pk { background: #faf5ff; }
+    .er-table .er-row .er-key {
+      font-size: 0.68rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: -apple-system, sans-serif;
+      white-space: nowrap;
+    }
+    .er-table .er-row .er-key.pk-tag { background: var(--accent); color: #fff; }
+    .er-table .er-row .er-key.fk-tag { background: var(--blue); color: #fff; }
+    .er-connector {
+      display: flex;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .er-connector .line {
+      width: 48px;
+      height: 2px;
+      background: var(--border);
+      position: relative;
+    }
+    .er-connector .line::before,
+    .er-connector .line::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      border: 2px solid var(--muted);
+      border-radius: 50%;
+      transform: translateY(-50%);
+    }
+    .er-connector .line::before { left: -4px; background: #fff; }
+    .er-connector .line::after { right: -4px; background: var(--muted); }
+    .er-connector .label-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 0.7rem;
+      color: var(--muted);
+      line-height: 1.3;
+    }
+
+    /* 提示框 */
+    .tip {
+      border-left: 4px solid var(--accent);
+      background: var(--accent-light);
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+      margin: 16px 0;
+      font-size: 0.9rem;
+    }
+    .tip strong { color: var(--accent); }
+    .tip.warn { border-color: var(--warn); background: #fef3c7; }
+    .tip.warn strong { color: #b45309; }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 8px 0 4px;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .dot {
+      width: 10px; height: 10px; border-radius: 3px; display: inline-block;
+    }
+
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 60px; }
+      h1 { font-size: 1.5rem; }
+      h2 { font-size: 1.2rem; }
+      .er-diagram { flex-direction: column; align-items: center; }
+      .er-connector { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- 标题 -->
+    <h1>数据库表结构 <span class="badge">SQLite</span></h1>
+    <p class="subtitle">本文档整理项目中持久化存储所用的数据库表、字段、索引、外键关系及访问方式。</p>
+
+    <!-- 1. 概览 -->
+    <h2>1. 概览</h2>
+    <p>
+      项目使用 <strong>SQLite</strong> 作为嵌入式数据库（通过 <code>better-sqlite3</code> 驱动），
+      数据库文件位于 <code>data/chat.db</code>，由 <code>lib/db.ts</code> 单例管理。
+      启用 <code>WAL</code> 模式以提升并发读性能。共包含 <strong>2 张表</strong>、
+      <strong>2 个业务索引</strong>，承载对话（Chat / Agent）与消息的存储。
+    </p>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="label">数据库类型</div>
+        <div class="value">SQLite 3</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">驱动</div>
+        <div class="value">better-sqlite3</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">表数量</div>
+        <div class="value">2</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">日志模式</div>
+        <div class="value">WAL</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="dot" style="background:var(--accent)"></i> 主键 (PK)</span>
+      <span><i class="dot" style="background:var(--blue)"></i> 外键 (FK)</span>
+      <span><i class="dot" style="background:var(--muted)"></i> 可空 (NULL)</span>
+    </div>
+
+    <!-- 2. ER 关系图 -->
+    <h2>2. 表关系（ER 图）</h2>
+    <p>
+      两张表通过 <code>conversation_id</code> 建立 <strong>一对多</strong> 关系：
+      一个对话包含多条消息，删除对话时通过 <code>ON DELETE CASCADE</code> 级联删除其全部消息。
+    </p>
+
+    <div class="er-diagram">
+      <div class="er-table">
+        <div class="er-title">conversations</div>
+        <div class="er-row pk">
+          <span>id</span>
+          <span class="er-key pk-tag">PK</span>
+        </div>
+        <div class="er-row"><span>title</span></div>
+        <div class="er-row"><span>model</span></div>
+        <div class="er-row"><span>type</span></div>
+        <div class="er-row"><span>created_at</span></div>
+        <div class="er-row"><span>updated_at</span></div>
+      </div>
+
+      <div class="er-connector">
+        <div class="label-stack">
+          <span>1</span>
+          <div class="line"></div>
+          <span>N</span>
+        </div>
+      </div>
+
+      <div class="er-table">
+        <div class="er-title">messages</div>
+        <div class="er-row pk">
+          <span>id</span>
+          <span class="er-key pk-tag">PK</span>
+        </div>
+        <div class="er-row pk">
+          <span>conversation_id</span>
+          <span class="er-key fk-tag">FK</span>
+        </div>
+        <div class="er-row"><span>role</span></div>
+        <div class="er-row"><span>content</span></div>
+        <div class="er-row"><span>tool_name</span></div>
+        <div class="er-row"><span>tool_call_id</span></div>
+        <div class="er-row"><span>created_at</span></div>
+      </div>
+    </div>
+
+    <!-- 3. conversations 表 -->
+    <h2>3. <code>conversations</code> 表</h2>
+    <p>存储所有对话会话，区分普通对话（Chat）与智能体对话（Agent）。</p>
+
+    <table>
+      <tr>
+        <th>字段</th>
+        <th>类型</th>
+        <th>约束</th>
+        <th>默认值</th>
+        <th>说明</th>
+      </tr>
+      <tr class="highlight-row">
+        <td><code>id</code></td>
+        <td>TEXT</td>
+        <td><span class="pk">PRIMARY KEY</span></td>
+        <td>—</td>
+        <td>对话唯一标识，创建时随机生成 8 位字符串</td>
+      </tr>
+      <tr>
+        <td><code>title</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>'新的对话'</code></td>
+        <td>对话标题，可由用户修改</td>
+      </tr>
+      <tr>
+        <td><code>model</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>'gpt-4o-mini'</code></td>
+        <td>该对话使用的 LLM 模型名</td>
+      </tr>
+      <tr>
+        <td><code>type</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL<br>CHECK IN (<code>'chat'</code>,<code>'agent'</code>)</td>
+        <td><code>'chat'</code></td>
+        <td>对话类型：普通对话 / 智能体</td>
+      </tr>
+      <tr>
+        <td><code>created_at</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>datetime('now','localtime')</code></td>
+        <td>创建时间（本地时间，ISO 文本）</td>
+      </tr>
+      <tr>
+        <td><code>updated_at</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>datetime('now','localtime')</code></td>
+        <td>最后更新时间，新增消息时自动刷新</td>
+      </tr>
+    </table>
+
+    <h3>3.1 建表语句</h3>
+    <pre><code>CREATE TABLE IF NOT EXISTS conversations (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL DEFAULT '新的对话',
+  model      TEXT NOT NULL DEFAULT 'gpt-4o-mini',
+  type       TEXT NOT NULL DEFAULT 'chat'
+               CHECK(type IN ('chat', 'agent')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);</code></pre>
+
+    <!-- 4. messages 表 -->
+    <h2>4. <code>messages</code> 表</h2>
+    <p>存储每条对话消息，包括用户输入、助手回复以及 Agent 模式下的工具调用结果。</p>
+
+    <table>
+      <tr>
+        <th>字段</th>
+        <th>类型</th>
+        <th>约束</th>
+        <th>默认值</th>
+        <th>说明</th>
+      </tr>
+      <tr class="highlight-row">
+        <td><code>id</code></td>
+        <td>TEXT</td>
+        <td><span class="pk">PRIMARY KEY</span></td>
+        <td>—</td>
+        <td>消息唯一标识</td>
+      </tr>
+      <tr class="highlight-row">
+        <td><code>conversation_id</code></td>
+        <td>TEXT</td>
+        <td><span class="fk">FOREIGN KEY</span> → conversations(id)<br>ON DELETE CASCADE</td>
+        <td>—</td>
+        <td>所属对话 ID</td>
+      </tr>
+      <tr>
+        <td><code>role</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL<br>CHECK IN (<code>'user'</code>,<code>'assistant'</code>,<code>'tool'</code>)</td>
+        <td>—</td>
+        <td>消息角色：用户 / 助手 / 工具结果</td>
+      </tr>
+      <tr>
+        <td><code>content</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>''</code></td>
+        <td>消息正文内容</td>
+      </tr>
+      <tr>
+        <td><code>tool_name</code></td>
+        <td>TEXT</td>
+        <td><span class="nullable">可空</span></td>
+        <td>NULL</td>
+        <td>工具名称，仅 <code>role='tool'</code> 时有值（迁移新增）</td>
+      </tr>
+      <tr>
+        <td><code>tool_call_id</code></td>
+        <td>TEXT</td>
+        <td><span class="nullable">可空</span></td>
+        <td>NULL</td>
+        <td>工具调用 ID，仅 <code>role='tool'</code> 时有值（迁移新增）</td>
+      </tr>
+      <tr>
+        <td><code>created_at</code></td>
+        <td>TEXT</td>
+        <td>NOT NULL</td>
+        <td><code>datetime('now','localtime')</code></td>
+        <td>创建时间，用于消息排序</td>
+      </tr>
+    </table>
+
+    <h3>4.1 建表语句</h3>
+    <pre><code>CREATE TABLE IF NOT EXISTS messages (
+  id              TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  role            TEXT NOT NULL
+                    CHECK(role IN ('user', 'assistant', 'tool')),
+  content         TEXT NOT NULL DEFAULT '',
+  tool_name       TEXT,
+  tool_call_id    TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+    ON DELETE CASCADE
+);</code></pre>
+
+    <!-- 5. 索引 -->
+    <h2>5. 索引</h2>
+    <p>为高频查询路径建立的索引（均使用 <code>IF NOT EXISTS</code> 幂等创建）。</p>
+
+    <table>
+      <tr>
+        <th>索引名</th>
+        <th>所在表</th>
+        <th>字段</th>
+        <th>用途</th>
+      </tr>
+      <tr>
+        <td><code>idx_messages_conv_id</code></td>
+        <td>messages</td>
+        <td><code>conversation_id</code></td>
+        <td>按对话加载消息列表（最频繁的查询）</td>
+      </tr>
+      <tr>
+        <td><code>idx_conversations_updated</code></td>
+        <td>conversations</td>
+        <td><code>updated_at DESC</code></td>
+        <td>侧边栏按最近更新排序展示对话</td>
+      </tr>
+      <tr>
+        <td><code>sqlite_autoindex_conversations_1</code></td>
+        <td>conversations</td>
+        <td><code>id</code></td>
+        <td>主键自动索引</td>
+      </tr>
+      <tr>
+        <td><code>sqlite_autoindex_messages_1</code></td>
+        <td>messages</td>
+        <td><code>id</code></td>
+        <td>主键自动索引</td>
+      </tr>
+    </table>
+
+    <!-- 6. 迁移 -->
+    <h2>6. Schema 迁移</h2>
+    <p>
+      为兼容历史数据库，<code>lib/db.ts</code> 在初始化时通过 <code>ALTER TABLE</code>
+      进行渐进式迁移（基于 <code>pragma('table_info')</code> 探测列是否存在）：
+    </p>
+
+    <table>
+      <tr>
+        <th>迁移项</th>
+        <th>操作</th>
+        <th>说明</th>
+      </tr>
+      <tr>
+        <td>conversations.<code>type</code></td>
+        <td>ADD COLUMN</td>
+        <td>旧库无此列时添加，默认 <code>'chat'</code></td>
+      </tr>
+      <tr>
+        <td>messages.<code>tool_name</code></td>
+        <td>ADD COLUMN</td>
+        <td>旧库无此列时添加，支持 Agent 工具结果</td>
+      </tr>
+      <tr>
+        <td>messages.<code>tool_call_id</code></td>
+        <td>ADD COLUMN</td>
+        <td>旧库无此列时添加，关联工具调用</td>
+      </tr>
+    </table>
+
+    <div class="tip warn">
+      <strong>注意：</strong>SQLite 的 <code>ALTER TABLE ADD COLUMN</code> 无法附加
+      <code>CHECK</code> 约束到已有表的迁移列，因此 <code>type</code> 列的 CHECK
+      仅在建表语句中生效；对历史库迁移得到的列，约束在应用层保证。
+    </div>
+
+    <!-- 7. 访问层 -->
+    <h2>7. 数据访问层（<code>lib/db.ts</code>）</h2>
+    <p>所有数据库操作封装在此模块，对外暴露纯函数，避免直接拼接 SQL。</p>
+
+    <h3>7.1 conversations 操作</h3>
+    <table>
+      <tr><th>函数</th><th>说明</th></tr>
+      <tr><td><code>listConversations()</code></td><td>列出全部对话，按 <code>updated_at DESC</code> 排序</td></tr>
+      <tr><td><code>getConversation(id)</code></td><td>按 ID 查询单个对话</td></tr>
+      <tr><td><code>createConversation(id, title, model, type)</code></td><td>新建对话</td></tr>
+      <tr><td><code>updateConversationTitle(id, title)</code></td><td>更新标题并刷新 <code>updated_at</code></td></tr>
+      <tr><td><code>updateConversationModel(id, model)</code></td><td>更新模型并刷新 <code>updated_at</code></td></tr>
+      <tr><td><code>touchConversation(id)</code></td><td>仅刷新 <code>updated_at</code>（置顶用）</td></tr>
+      <tr><td><code>deleteConversation(id)</code></td><td>删除对话及其全部消息（先删 messages 再删 conversation）</td></tr>
+    </table>
+
+    <h3>7.2 messages 操作</h3>
+    <table>
+      <tr><th>函数</th><th>说明</th></tr>
+      <tr><td><code>getConversationMessages(conversationId)</code></td><td>按 <code>created_at ASC</code> 加载对话的全部消息</td></tr>
+      <tr><td><code>addMessage(id, conversationId, role, content, toolName?, toolCallId?)</code></td><td>新增消息，并自动 <code>touchConversation</code> 置顶对话</td></tr>
+    </table>
+
+    <!-- 8. 约定 -->
+    <h2>8. 设计约定</h2>
+    <ul>
+      <li><strong>主键：</strong>均为业务生成的 <code>TEXT</code>（随机字符串），便于跨服务引用。</li>
+      <li><strong>时间存储：</strong>统一使用 <code>datetime('now', 'localtime')</code> 生成本地时间文本。</li>
+      <li><strong>软排序：</strong>对话列表依赖 <code>updated_at</code>，消息列表依赖 <code>created_at</code>。</li>
+      <li><strong>级联删除：</strong>删除对话时通过外键 <code>ON DELETE CASCADE</code> 自动清理消息；代码层亦显式删除一次以兜底。</li>
+      <li><strong>单例连接：</strong>模块级缓存 <code>_db</code>，整个进程复用一个连接。</li>
+    </ul>
+
+    <p style="margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; text-align: center;">
+      文档最后更新：2026-06-15 &nbsp;|&nbsp; 数据来源：<code>lib/db.ts</code> &amp; <code>data/chat.db</code>
+    </p>
+
+  </div>
+</body>
+</html>
